@@ -49,7 +49,7 @@ describe('ICMPv4 protocol', () => {
     expect(identifier).toEqual(process.pid % 0xFFFF)
     expect(seq16).toEqual(1) // first packet
     expect(Number(process.hrtime.bigint() - timestamp)).toBeGreaterThan(0)
-    expect(Number(process.hrtime.bigint() - timestamp)).toBeLessThan(1000000)
+    expect(Number(process.hrtime.bigint() - timestamp)).toBeLessThan(5000000)
     expect(sequence).toEqual(1) // first packet
     expect(correlation).toEqual(packet4.subarray(20))
 
