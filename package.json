@@ -1,0 +1,18 @@
+{
+  "name": "lib-ping",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build-native": "./native/build.sh",
+    "build": "plug"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "node-gyp": "^9.3.1",
+    "typescript": "^4.9.5",
+    "@plugjs/build": "^0.1.0"
+  }
+}
