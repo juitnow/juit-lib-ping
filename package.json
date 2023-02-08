@@ -48,6 +48,10 @@
   "files": [
     "*.md",
     "dist/",
+    "native/darwin-*",
+    "native/linux-*",
+    "native/ping.cjs",
+    "native/ping.d.cts",
     "src/",
     "tsconfig.json"
   ],
