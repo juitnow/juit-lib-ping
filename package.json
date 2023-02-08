@@ -1,18 +1,62 @@
 {
-  "name": "lib-ping",
-  "version": "0.0.1",
-  "description": "",
-  "main": "index.js",
+  "name": "@juit/lib-ping",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "description": "Rootless ICMPv4/ICMPv6 Ping library for NodeJS",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      }
+    }
+  },
   "scripts": {
     "build-native": "./native/build.sh",
     "build": "plug"
   },
-  "author": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "icmp",
+    "icmpv4",
+    "icmpv6",
+    "monitoring",
+    "network",
+    "ping",
+    "typescript"
+  ],
+  "author": "Juit Developers <developers@juit.com>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@types/node": "^18.11.18",
+    "@plugjs/build": "^0.1.0",
+    "@types/node": "^18.13.0",
     "node-gyp": "^9.3.1",
-    "typescript": "^4.9.5",
-    "@plugjs/build": "^0.1.0"
-  }
+    "typescript": "^4.9.5"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "files": [
+    "*.md",
+    "dist/",
+    "src/",
+    "tsconfig.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/juitnow/juit-lib-ping.git"
+  },
+  "bugs": {
+    "url": "https://github.com/juitnow/juit-lib-ping/issues"
+  },
+  "homepage": "https://github.com/juitnow/juit-lib-ping#readme"
 }
