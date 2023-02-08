@@ -42,7 +42,7 @@ describe('Ping Test', () => {
         expect(sent).withContext('sent').toBeGreaterThanOrEqual(9)
         expect(sent).withContext('sent').toBeLessThanOrEqual(10)
         expect(received).withContext('received').toEqual(sent)
-        expect(latency).withContext('latency').toBeLessThan(10)
+        expect(latency).withContext('pong').toBeLessThan(10)
 
         expect(stats).toEqual({ sent, received, latency })
       } finally {
@@ -59,7 +59,7 @@ describe('Ping Test', () => {
       let incoming: number = 0
       let total: number = 0
 
-      pinger.on('latency', (ms: number) => {
+      pinger.on('pong', (ms: number) => {
         incoming += 1
         total += ms
       })

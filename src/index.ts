@@ -114,9 +114,9 @@ export interface Pinger {
   once(event: 'error', handler: (error: Error) => void): void
   off(event: 'error', handler: (error: Error) => void): void
 
-  on(event: 'latency', handler: (latency: number) => void): void
-  once(event: 'latency', handler: (latency: number) => void): void
-  off(event: 'latency', handler: (latency: number) => void): void
+  on(event: 'pong', handler: (latency: number) => void): void
+  once(event: 'pong', handler: (latency: number) => void): void
+  off(event: 'pong', handler: (latency: number) => void): void
 }
 
 export interface PingerStats {
@@ -160,7 +160,7 @@ class PingerImpl extends EventEmitter implements Pinger {
       if (latency < 0n) return // negative latency, wrong packet!
 
       // Notify listeners and increase counters for stats
-      this.emit('latency', Number(latency) / 1000000)
+      this.emit('pong', Number(latency) / 1000000)
       this.#latency += latency
       this.#received ++
     }).bind({ fd }, () => {
