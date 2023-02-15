@@ -108,6 +108,29 @@ describe('Ping Test', () => {
     }
   })
 
+  it('should immediately close on error when pinging manually', async () => {
+    const pinger = await createPinger('127.0.0.1')
+    try {
+      // await for our file descriptor to be open, socket to be bound and close
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect((<any> pinger).__fd).toBeInstanceOf(Number)
+      expect((<any> pinger).__fd).toBeGreaterThan(0)
+      fs.closeSync((<any> pinger).__fd)
+
+      expect(pinger.closed).toBeFalse()
+      expect(pinger.running).toBeFalse()
+
+      await expectAsync(pinger.ping()).toBeRejectedWith(jasmine.objectContaining({
+        code: 'EBADF',
+      }))
+
+      expect(pinger.closed).toBeTrue()
+      expect(pinger.running).toBeFalse()
+    } finally {
+      await pinger.close()
+    }
+  })
+
 
   it('should not start when the socket is closed', async () => {
     const pinger = await createPinger('127.0.0.1', { interval: 100 })
@@ -129,5 +152,32 @@ describe('Ping Test', () => {
     } finally {
       await pinger.close()
     }
+  })
+
+  it('should emit warnings when the wrong packet is received', async () => {
+    const pinger = await createPinger('127.0.0.1')
+
+    const warnings: string[][] = []
+    pinger.on('warning', (...args) => warnings.push(args))
+
+    // first ping
+    await pinger.ping()
+
+    // mess up whe sequence number in the protocol handler
+    ;((<any> pinger).__handler.__seq_out --)
+
+    // ping once again, we should get ERR_SEQUENCE_TOO_SMALL
+    await pinger.ping()
+
+    // give it a jiffy to do stuff on the network
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // check we got our code
+    expect(warnings).toEqual(jasmine.arrayContaining([
+      jasmine.arrayWithExactContents([
+        'ERR_SEQUENCE_TOO_SMALL',
+        'Received packet with sequence in the past (duplicate packet?)',
+      ]),
+    ]))
   })
 })
