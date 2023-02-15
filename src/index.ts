@@ -1,12 +1,12 @@
 import assert from 'node:assert'
+import { createSocket } from 'node:dgram'
 import { resolve4, resolve6 } from 'node:dns/promises'
+import { EventEmitter } from 'node:events'
 import { isIP, isIPv4, isIPv6 } from 'node:net'
 import { networkInterfaces } from 'node:os'
-import { createSocket } from 'node:dgram'
-import { EventEmitter } from 'node:events'
 
 import * as native from '../native/ping.cjs'
-import { ProtocolHandler } from './protocol'
+import { getWarning, ProtocolHandler } from './protocol'
 
 import type { Socket } from 'node:dgram'
 
@@ -21,7 +21,7 @@ function ifAddr(name: string, protocol: 'ipv4' | 'ipv6'): string | undefined {
 
 /** Options to create a {@link Pinger} instance */
 export interface PingerOptions {
-  /** The protocol level: `4` for `IPv4` or `6` for `IPv6` */
+  /** The protocol: either `ipv4` or `ipv6` */
   protocol?: 'ipv4' | 'ipv6',
   /** An optional address or _interface name_ used to ping _from_ */
   from?: string,
@@ -110,13 +110,20 @@ export interface Pinger {
   close(): Promise<void>
   stats(): PingerStats
 
+  ping(): Promise<void>
+  ping(callback: (error: Error | null) => void): void
+
   on(event: 'error', handler: (error: Error) => void): void
-  once(event: 'error', handler: (error: Error) => void): void
   off(event: 'error', handler: (error: Error) => void): void
+  once(event: 'error', handler: (error: Error) => void): void
+
+  on(event: 'warning', handler: (code: string, message: string) => void): void
+  off(event: 'warning', handler: (code: string, message: string) => void): void
+  once(event: 'warning', handler: (code: string, message: string) => void): void
 
   on(event: 'pong', handler: (latency: number) => void): void
-  once(event: 'pong', handler: (latency: number) => void): void
   off(event: 'pong', handler: (latency: number) => void): void
+  once(event: 'pong', handler: (latency: number) => void): void
 }
 
 export interface PingerStats {
@@ -126,15 +133,15 @@ export interface PingerStats {
 }
 
 class PingerImpl extends EventEmitter implements Pinger {
-  #handler: ProtocolHandler
-  #socket: Socket
+  private readonly __handler: ProtocolHandler
+  private readonly __socket: Socket
 
-  #timer?: NodeJS.Timer
+  private __timer?: NodeJS.Timer
 
-  #sent: number = 0
-  #received: number = 0
-  #latency: bigint = 0n
-  #closed: boolean = false
+  private __sent: number = 0
+  private __received: number = 0
+  private __latency: bigint = 0n
+  private __closed: boolean = false
 
   constructor(
       public readonly source: string | undefined,
@@ -148,80 +155,102 @@ class PingerImpl extends EventEmitter implements Pinger {
 
     const type = protocol === 'ipv4' ? 'udp4' : 'udp6'
 
-    this.#handler = new ProtocolHandler(protocol === 'ipv6')
+    this.__handler = new ProtocolHandler(protocol === 'ipv6')
 
     // Create a socket and handle its incoming messages
-    this.#socket = createSocket({ type }, (buffer, info) => {
+    this.__socket = createSocket({ type }, (buffer, info) => {
       // Check that the address we received the packet from matches our target
       if (info.address !== target) return
 
       // Get the latency for the incoming packet in nanoseconds (might be)
-      const latency = this.#handler.incoming(buffer)
-      if (latency < 0n) return // negative latency, wrong packet!
+      const latency = this.__handler.incoming(buffer)
+      if (latency < 0n) {
+        const warning = getWarning(latency)
+        this.emit('warning', warning.code, warning.message)
+        return // negative latency, wrong packet!
+      }
 
       // Notify listeners and increase counters for stats
       this.emit('pong', Number(latency) / 1000000)
-      this.#latency += latency
-      this.#received ++
+      this.__latency += latency
+      this.__received ++
     }).bind({ fd }, () => {
       Object.defineProperty(this, '__fd', { value: fd })
     })
 
     // Mark when we're closed
-    this.#socket.on('close', () => this.#closed = true)
+    this.__socket.on('close', () => this.__closed = true)
   }
 
   get running(): boolean {
-    return !! this.#timer
+    return !! this.__timer
   }
 
   get closed(): boolean {
-    return this.#closed
+    return this.__closed
+  }
+
+  // wrap "emit" so that "error" events won't throw when no listeners are there
+  emit(eventName: 'error' | 'warning' | 'pong', ...args: any[]): boolean {
+    if (this.listenerCount(eventName) < 1) return false
+    return super.emit(eventName, ...args)
+  }
+
+  ping(): Promise<void>
+  ping(callback: (error: Error | null) => void): void
+  ping(callback?: (error: Error | null) => void): Promise<void> | void {
+    if (! callback) {
+      return new Promise((resolve, reject) => {
+        this.ping((error: Error | null) => error ? reject(error) : resolve())
+      })
+    }
+
+    const buffer = this.__handler.outgoing()
+    this.__socket.send(buffer, 1, this.target, (error: any) => {
+      if (error) {
+        this.emit('error', error)
+        void this.close()
+        callback(error)
+      } else {
+        this.__sent ++
+        callback(null)
+      }
+    })
   }
 
   start(): void {
-    if (this.#closed) throw new Error('Socket closed')
-    if (this.#timer) return
+    if (this.__closed) throw new Error('Socket closed')
+    if (this.__timer) return
 
-    this.#timer = setInterval(() => {
-      const buffer = this.#handler.outgoing()
-      this.#socket.send(buffer, 1, this.target, (error: any) => {
-        if (error) {
-          this.emit('error', error)
-          void this.close()
-        } else {
-          this.#sent ++
-        }
-      })
-    }, this.interval)
+    this.__timer = setInterval(() => this.ping(() => void 0), this.interval).unref()
   }
 
   stop(): void {
-    if (this.#timer) clearInterval(this.#timer)
-    this.#timer = undefined
+    if (this.__timer) clearInterval(this.__timer)
+    this.__timer = undefined
   }
 
   close(): Promise<void> {
     return new Promise((resolve) => {
-      if (this.#closed) return resolve()
-      this.#socket.close(resolve)
-      this.#closed = true
+      if (this.__closed) return resolve()
+      this.__socket.close(resolve)
+      this.__closed = true
       this.stop()
     })
   }
 
   stats(): PingerStats {
     // Latency is NaN if no packets were received
-    const latency = this.#received < 1 ? NaN :
-      Number(this.#latency / BigInt(this.#received)) / 1000000
+    const latency = this.__received < 1 ? NaN :
+      Number(this.__latency / BigInt(this.__received)) / 1000000
 
     // Prepare the stats object from our counters
-    const stats = { sent: this.#sent, received: this.#received, latency }
+    const stats = { sent: this.__sent, received: this.__received, latency }
 
     // Reset counters
-    this.#sent = 0
-    this.#received = 0
-    this.#latency = 0n
+    this.__sent = 0
+    this.__received = 0
+    this.__latency = 0n
 
     // Done
     return stats
