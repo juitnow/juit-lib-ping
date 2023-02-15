@@ -46,30 +46,54 @@
 
 import { randomBytes } from 'node:crypto'
 
+export const ERR_WRONG_LENGTH = -1n
+export const ERR_WRONG_CORRELATION = -2n
+export const ERR_WRONG_ICMP_TYPE = -3n
+export const ERR_WRONG_ICMP_CODE = -4n
+export const ERR_WRONG_SEQUENCE = -5n
+export const ERR_SEQUENCE_TOO_BIG = -6n
+export const ERR_SEQUENCE_TOO_SMALL = -7n
+export const ERR_LATENCY_NEGATIVE = -8n
+
+export function getWarning(num: bigint): { code: string, message: string } {
+  if (num >= 0) return { code: 'OK', message: `Latency is ${Number(num) / 1000000} ms` }
+  switch (num) {
+    case ERR_WRONG_LENGTH: return { code: 'ERR_WRONG_LENGTH', message: 'Received packet with invalid length' }
+    case ERR_WRONG_CORRELATION: return { code: 'ERR_WRONG_CORRELATION', message: 'Received packet with invalid correlation data' }
+    case ERR_WRONG_ICMP_TYPE: return { code: 'ERR_WRONG_ICMP_TYPE', message: 'Received packet with invalid ICMP type' }
+    case ERR_WRONG_ICMP_CODE: return { code: 'ERR_WRONG_ICMP_CODE', message: 'Received packet with invalid ICMP code' }
+    case ERR_WRONG_SEQUENCE: return { code: 'ERR_WRONG_SEQUENCE', message: 'Received packet with mismatched sequence in header/payload' }
+    case ERR_SEQUENCE_TOO_BIG: return { code: 'ERR_SEQUENCE_TOO_BIG', message: 'Received packet with sequence in the future' }
+    case ERR_SEQUENCE_TOO_SMALL: return { code: 'ERR_SEQUENCE_TOO_SMALL', message: 'Received packet with sequence in the past (duplicate packet?)' }
+    case ERR_LATENCY_NEGATIVE: return { code: 'ERR_LATENCY_NEGATIVE', message: 'Received packet with negative latence (time travel is possible!)' }
+    default: return { code: 'ERR_UNKNOWN', message: `Unknown error code (code=${num})` }
+  }
+}
+
 export class ProtocolHandler {
-  private _packet: Buffer = randomBytes(64)
-  private _seq_out: number = 0
-  private _seq_in: number = 0
-  private _type: number
+  private readonly __packet: Buffer = randomBytes(64)
+  private readonly __type: number
+  private __seq_out: number = 0
+  private __seq_in: number = 0
 
   constructor(v6: boolean) {
-    this._type = (v6 ? 0x81 : 0x00)
+    this.__type = (v6 ? 0x81 : 0x00)
     // type (0x80 for IPv6, 0x08 for IPv4), code (0x00), checksum (0x0000)
-    this._packet.writeUInt32BE(v6 ? 0x80000000 : 0x08000000, 0)
+    this.__packet.writeUInt32BE(v6 ? 0x80000000 : 0x08000000, 0)
     // itentifier (process pid)
-    this._packet.writeUInt16BE(process.pid % 0x0ffff, 4)
+    this.__packet.writeUInt16BE(process.pid % 0x0ffff, 4)
     // sequence (for now set to 0)
-    this._packet.writeUInt16BE(this._seq_out, 6)
+    this.__packet.writeUInt16BE(this.__seq_out, 6)
     // timestamp (set to zero as well)
-    this._packet.writeBigUInt64BE(0n, 8)
+    this.__packet.writeBigUInt64BE(0n, 8)
   }
 
   outgoing(): Buffer {
-    const buffer = Buffer.from(this._packet)
+    const buffer = Buffer.from(this.__packet)
 
     // Prep the sequence (full sequence and lower 16 bits)
-    buffer.writeUInt32BE(++ this._seq_out, 16)
-    buffer.writeUInt16BE(this._seq_out & 0x0ff, 6)
+    buffer.writeUInt32BE(++ this.__seq_out, 16)
+    buffer.writeUInt16BE(this.__seq_out & 0x0ff, 6)
 
     // Prep the timestamp
     buffer.writeBigUInt64BE(process.hrtime.bigint(), 8)
@@ -101,19 +125,19 @@ export class ProtocolHandler {
 
     // If the buffer length is not 64 bytes after trimming above, we can
     // safely assume this is not an ECHO reply to one of our packets
-    if (buffer.length !== 64) return -1n
+    if (buffer.length !== 64) return ERR_WRONG_LENGTH
 
     // Compare the _correlation data_ part of the buffer to determine whether
     // this was a packet sent for us or not.... If not, ignore
-    if (buffer.compare(this._packet, 20, 64, 20, 64) !== 0) return -2n
+    if (buffer.compare(this.__packet, 20, 64, 20, 64) !== 0) return ERR_WRONG_CORRELATION
 
     // Check the type, it _MUST_ be an echo reply (IPv4 or IPv6)
     const type = buffer.readUInt8(0)
-    if (type !== this._type) return -3n
+    if (type !== this.__type) return ERR_WRONG_ICMP_TYPE
 
     // Check the code, it _MUST_ be 0x00
     const code = buffer.readUInt8(1)
-    if (code !== 0x00) return -4n
+    if (code !== 0x00) return ERR_WRONG_ICMP_CODE
 
     // Checksums on IPv6 require a "pseudo header" to be prepended so for now
     // we skip the whole shabang and ignore it... I assume the kernel checks...
@@ -131,21 +155,21 @@ export class ProtocolHandler {
     const sequence = buffer.readUInt32BE(16) // this is in our "payload"
 
     // Sequence in the ICMP header must match lower 16 bits from the payload
-    if (buffer.readUInt16BE(6) != (sequence & 0xFFFF)) return -5n
+    if (buffer.readUInt16BE(6) != (sequence & 0xFFFF)) return ERR_WRONG_SEQUENCE
 
     // If the full sequence is greater than whatever we sent out, we ignore
-    if (sequence > this._seq_out) return -6n
+    if (sequence > this.__seq_out) return ERR_SEQUENCE_TOO_BIG
 
     // If the full sequence is lower (or equal) to the last one received this
     // means we received either a duplicate packet, or an out of order one
-    if (sequence <= this._seq_in) return -7n
+    if (sequence <= this.__seq_in) return ERR_SEQUENCE_TOO_SMALL
 
     // Calculate the delta-time in nanoseconds, if negative obviously ignore
     const latency = now - buffer.readBigInt64BE(8)
-    if (latency < 0n) return -8n
+    if (latency < 0n) return ERR_LATENCY_NEGATIVE
 
     // Store the last sequence number and return our latency
-    this._seq_in = sequence
+    this.__seq_in = sequence
     return latency
   }
 }
