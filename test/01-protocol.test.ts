@@ -1,10 +1,22 @@
-import { ProtocolHandler, rfc1071crc } from '../src/protocol'
+import {
+  ERR_LATENCY_NEGATIVE,
+  ERR_SEQUENCE_TOO_BIG,
+  ERR_SEQUENCE_TOO_SMALL,
+  ERR_WRONG_CORRELATION,
+  ERR_WRONG_ICMP_CODE,
+  ERR_WRONG_ICMP_TYPE,
+  ERR_WRONG_LENGTH,
+  ERR_WRONG_SEQUENCE,
+  getWarning,
+  ProtocolHandler,
+  rfc1071crc,
+} from '../src/protocol'
 
-describe('ICMPv4 protocol', () => {
+describe('ICMP protocol', () => {
   const handler4 = new ProtocolHandler(false)
-  const packet4 = (<any> handler4)._packet
-  const seqIn4 = (): number => (<any> handler4)._seq_in
-  const seqOut4 = (): number => (<any> handler4)._seq_out
+  const packet4 = (<any> handler4).__packet
+  const seqIn4 = (): number => (<any> handler4).__seq_in
+  const seqOut4 = (): number => (<any> handler4).__seq_out
 
   const reply4 = (): Buffer => {
     const buffer = Buffer.from(handler4.outgoing())
@@ -17,9 +29,9 @@ describe('ICMPv4 protocol', () => {
   }
 
   const handler6 = new ProtocolHandler(true)
-  const packet6 = (<any> handler6)._packet
-  const seqIn6 = (): number => (<any> handler6)._seq_in
-  const seqOut6 = (): number => (<any> handler6)._seq_out
+  const packet6 = (<any> handler6).__packet
+  const seqIn6 = (): number => (<any> handler6).__seq_in
+  const seqOut6 = (): number => (<any> handler6).__seq_out
 
   const reply6 = (): Buffer => {
     const buffer = Buffer.from(handler6.outgoing())
@@ -134,7 +146,7 @@ describe('ICMPv4 protocol', () => {
     const now = buffer.readBigInt64BE(8)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer.subarray(0, 63), now)).toEqual(-1n)
+    expect(handler6.incoming(buffer.subarray(0, 63), now)).toEqual(ERR_WRONG_LENGTH)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -144,7 +156,7 @@ describe('ICMPv4 protocol', () => {
     buffer.fill(0, 20, 64)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-2n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_WRONG_CORRELATION)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -154,7 +166,7 @@ describe('ICMPv4 protocol', () => {
     buffer.writeUint8(0, 0)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-3n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_WRONG_ICMP_TYPE)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -164,7 +176,7 @@ describe('ICMPv4 protocol', () => {
     buffer.writeUint8(1, 1)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-4n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_WRONG_ICMP_CODE)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -174,7 +186,7 @@ describe('ICMPv4 protocol', () => {
     buffer.writeUint16BE(0, 6)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-5n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_WRONG_SEQUENCE)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -185,7 +197,7 @@ describe('ICMPv4 protocol', () => {
     buffer.writeUint32BE(seqOut6() + 1, 16)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-6n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_SEQUENCE_TOO_BIG)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -196,7 +208,7 @@ describe('ICMPv4 protocol', () => {
     buffer.writeUint32BE(seqIn6() - 1, 16)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-7n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_SEQUENCE_TOO_SMALL)
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
@@ -206,7 +218,21 @@ describe('ICMPv4 protocol', () => {
     buffer.writeBigInt64BE(now + 1n, 8)
 
     expect(seqIn6()).not.toEqual(seqOut6())
-    expect(handler6.incoming(buffer, now)).toEqual(-8n)
+    expect(handler6.incoming(buffer, now)).toEqual(ERR_LATENCY_NEGATIVE)
     expect(seqIn6()).not.toEqual(seqOut6())
+  })
+
+  it('should provide informative warning messages', () => {
+    expect(getWarning(1234567n)).toEqual({ code: 'OK', message: 'Latency is 1.234567 ms' })
+
+    expect(getWarning(-1n)).toEqual({ code: 'ERR_WRONG_LENGTH', message: 'Received packet with invalid length' })
+    expect(getWarning(-2n)).toEqual({ code: 'ERR_WRONG_CORRELATION', message: 'Received packet with invalid correlation data' })
+    expect(getWarning(-3n)).toEqual({ code: 'ERR_WRONG_ICMP_TYPE', message: 'Received packet with invalid ICMP type' })
+    expect(getWarning(-4n)).toEqual({ code: 'ERR_WRONG_ICMP_CODE', message: 'Received packet with invalid ICMP code' })
+    expect(getWarning(-5n)).toEqual({ code: 'ERR_WRONG_SEQUENCE', message: 'Received packet with mismatched sequence in header/payload' })
+    expect(getWarning(-6n)).toEqual({ code: 'ERR_SEQUENCE_TOO_BIG', message: 'Received packet with sequence in the future' })
+    expect(getWarning(-7n)).toEqual({ code: 'ERR_SEQUENCE_TOO_SMALL', message: 'Received packet with sequence in the past (duplicate packet?)' })
+    expect(getWarning(-8n)).toEqual({ code: 'ERR_LATENCY_NEGATIVE', message: 'Received packet with negative latence (time travel is possible!)' })
+    expect(getWarning(-9n)).toEqual({ code: 'ERR_UNKNOWN', message: `Unknown error code (code=${-9})` })
   })
 })
