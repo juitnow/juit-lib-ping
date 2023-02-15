@@ -180,14 +180,22 @@ describe('ICMP protocol', () => {
     expect(seqIn6()).not.toEqual(seqOut6())
   })
 
-  it('should not handle incoming packets with the lower 16 sequence number', () => {
+  it('should not handle incoming packets with the lower 8 bits of sequence number', () => {
     const buffer = reply6()
     const now = buffer.readBigInt64BE(8)
-    buffer.writeUint16BE(0, 6)
+
+    const seq = buffer.readUint16BE(6)
+    buffer.writeUint16BE(seq + 1, 6)
 
     expect(seqIn6()).not.toEqual(seqOut6())
     expect(handler6.incoming(buffer, now)).toEqual(ERR_WRONG_SEQUENCE)
     expect(seqIn6()).not.toEqual(seqOut6())
+
+    // but it should match when the higher 8 bits are changed
+    buffer.writeUint16BE((seq & 0x0ff) + 0x0500, 6)
+    expect(seqIn6()).not.toEqual(seqOut6())
+    expect(handler6.incoming(buffer, now)).toEqual(0n) // success!
+    expect(seqIn6()).toEqual(seqOut6())
   })
 
   it('should not handle incoming packets with sequence greater than last packet out', () => {
