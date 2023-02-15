@@ -154,8 +154,9 @@ export class ProtocolHandler {
     // the last we sent out, or lower-or-equal than the last one we received...
     const sequence = buffer.readUInt32BE(16) // this is in our "payload"
 
-    // Sequence in the ICMP header must match lower 16 bits from the payload
-    if (buffer.readUInt16BE(6) != (sequence & 0xFFFF)) return ERR_WRONG_SEQUENCE
+    // Sequence in the ICMP header is 16 bits, but as some kernels only return
+    // the lower 8 bits on ECHO Reply packets, so only match the lower 8 bits...
+    if ((buffer.readUInt16BE(6) & 0xFF) != (sequence & 0xFF)) return ERR_WRONG_SEQUENCE
 
     // If the full sequence is greater than whatever we sent out, we ignore
     if (sequence > this.__seq_out) return ERR_SEQUENCE_TOO_BIG
