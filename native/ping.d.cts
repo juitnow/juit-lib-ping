@@ -20,13 +20,15 @@ export const version: string
  *
  * @param family Either the constant {@link AF_INET} for `ICMPv4` or
  *               {@link AF_INET6} for `ICMPv6`
- * @param bind_address An _IP address_ (not a _host name_) the socked should be
+ * @param from_address An _IP address_ (not a _host name_) the socked should be
  *                     bound to before being returned. This must be a valid
  *                     address for a local interface, or `null` or `undefined`.
+ * @param source_interface The interface name to bind, or `null` or `undefined`.
  * @param callback The callback to invoke after the socket was opened and bound.
  */
 export function open(
   family: af_family,
-  bind_address: string | null | undefined,
+  from_address: string | null | undefined,
+  source_interface: string | null | undefined,
   callback: open_callback
 ): void
