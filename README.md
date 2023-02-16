@@ -48,8 +48,9 @@ method. This method takes two parameters:
   the protocol to use. if the `to` address is an IPv6 _address_ the protocol
   will default to `ipv6`, in all other cases it will default to `ipv4`.
 * `from`:
-  the IP address, or _interface name_ used to ping _from_; this is useful when
-  multiple interfaces / ip addresses can route `to` simultaneously.
+  the IP address ping _from_; this is useful when
+* `source`:
+  the _interface name_ used as the _source_ of our ICMP packages.
 * `timeout`: (_default:_ `30000` or 30 seconds)
   the timeout **in milliseconds** after which a packet is considered _lost_.
 * `interval`: (_default:_ `1000` or 1 second)
@@ -60,6 +61,7 @@ The `Pinger` interface
 
 #### Methods
 
+* `ping()`: that's it... send an ICMP Echo Request packet.
 * `start()`: starts the `Pinger`, collecting stats and emitting events.
 * `stop()`: stops the `Pinger`, but keeps the underlying socket open.
 * `close()`: stops the `Pinger` and _closes_ the underlying socket.
@@ -68,14 +70,34 @@ The `Pinger` interface
 #### Properties
 
 * `target`: the target IP address to ping _to_.
-* `source`: the source IP address used to ping _from_ or `undefined`.
+* `from`: the source IP address used to ping _from_ or `undefined`.
+* `source`: the name of the _source_ interface being used or `undefined`.
 * `timeout`: the timeout in milliseconds after which a packet is considered _lost_.
 * `interval`: the iterval in milliseconds at which ECHO requests are sent.
-* `protocol`: the IP protocol, either `ipv4` or `ipv6`
-* `running`: whether the `Pinger` is _running_ or not
-* `closed`: whether the socket is _closed_ or not
+* `protocol`: the IP protocol, either `ipv4` or `ipv6`.
+* `running`: whether the `Pinger` is _running_ or not.
+* `closed`: whether the socket is _closed_ or not.
 
 #### Events
 
-* `pong`: when an ECHO Reply packet is received (with latency as a parameter)
-* `error`: when an error occurred
+* `pong(latency)`:
+  when an ECHO Reply packet is received (latency is in milliseconds).
+* `warning(code, message)`:
+  when a warning occurred it includes an error _code_ and relative message.
+* `error`:
+  when an error occurred; in this case the `pinger` is automatically closed.
+
+Command Line
+------------
+
+A _brain dead_ command line interface is also available (useful for debugging):
+
+```bash
+$ juit-ping -I lo0 127.0.0.1
+```
+
+#### Parameters
+
+* `-4`: Force the use of IPv4/ICMPv4.
+* `-6`: Force the use of IPv6/ICMPv6.
+* `-I address|interface`: Address or interface name to use for pinging from

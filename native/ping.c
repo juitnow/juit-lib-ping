@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <net/if.h>
 
 // node/libuv imports
 #include <node_api.h>
@@ -11,6 +12,14 @@
 #ifndef ADDON_VERSION
 #define ADDON_VERSION "0.0.0"
 #endif
+
+// define a string for the "interface name too long" message
+#define __STR_HELPER(x) #x
+#define __TO_STR(x) __STR_HELPER(x)
+#define __ERR_SOURCE_INTERFACE_NAME_TOO_LONG \
+  "Source interface must be at most " \
+  __TO_STR(IFNAMSIZ) \
+  " characters long"
 
 /* ========================================================================== *
  * NAPI_CALL_VALUE / NAPI_CALL_VOID: wrapper to throw exception when a        *
@@ -180,6 +189,10 @@ struct _open_data {
     struct sockaddr_in __sockaddr_in4_addr;
     struct sockaddr_in6 __sockaddr_in6_addr;
   };
+  /** The length of interface name to bind to, or zero if no device */
+  size_t __interface_length;
+  /** The actual name of the interface to bind to (with null terminator) */
+  char __interface[IFNAMSIZ + 1];
   /** Either NULL or the name of the sytem call that failed */
   const char * __syscall;
   /** Either `0` or the `errno` from the sytem call that failed */
@@ -190,9 +203,27 @@ struct _open_data {
 
 /* ========================================================================== */
 
+/** Inject an error in our data structure and close the socket (if opened) */
+static void _open_execute_fail(
+  napi_env _env,
+  struct _open_data *_data,
+  const char *_syscall,
+  int _errno
+) {
+  int __socket = _data->__fd;
+
+  _data->__syscall = _syscall;
+  _data->__errno = errno;
+  _data->__fd = -1;
+
+  if (__socket > 1) return;
+
+  close(__socket);
+}
+
 /**
- * Asynchronously open an ICMP socket and optionally bind it to a source
- * address.
+ * Asynchronously open an ICMP socket and (optionally) bind it to a source
+ * interface and assign a from address.
  */
 static void _open_execute(
   napi_env _env,
@@ -215,26 +246,50 @@ static void _open_execute(
 
   // Open the socket and get the file descriptor
   __data->__fd = socket(__data->__sockaddr.sa_family, SOCK_DGRAM, __protocol);
-  if (__data->__fd < 0) {
-    __data->__syscall = "socket";
-    __data->__errno = errno;
-    __data->__fd = -1;
-    return;
+  if (__data->__fd < 0) return _open_execute_fail(_env, __data, "socket", errno);
+
+  // Optionally bind to an interface
+  if (__data->__interface_length > 0) {
+    #ifdef __linux__
+      // On Linux, use "setsockopt" to bind directly to the interface
+      int __result = setsockopt(
+        __data->__fd,
+        SOL_SOCKET,
+        SO_BINDTODEVICE,
+        __data->__interface,
+        __data->__interface_length
+      );
+
+      if (__result < 0) return _open_execute_fail(_env, __data, "setsockopt", errno);
+    #endif // ifdef __linux__
+
+    #ifdef __APPLE__
+      // On Macs, first we have to figure out the interface index
+      int __index = if_nametoindex(__data->__interface);
+      if (__index == 0) return _open_execute_fail(_env, __data, "if_nametoindex", errno);
+
+      // Then determine the sockopt level and option (depends on IPv4/IPv6)
+      int __level;
+      int __option;
+      if (__data->__sockaddr.sa_family == AF_INET) {
+        __level = IPPROTO_IP;
+        __option = IP_BOUND_IF;
+      } else { // we checked sa_family before opening the socket
+        __level = IPPROTO_IPV6;
+        __option = IPV6_BOUND_IF;
+      }
+
+      // Finally we can call "setsockopt" with the correct level, option, and interface index
+      int __result = setsockopt(__data->__fd, __level, __option, &__index, sizeof(__index));
+      if (__result < 0) return _open_execute_fail(_env, __data, "setsockopt", errno);
+    #endif // ifdef __APPLE__
   }
 
-  // If we don't have to bind, simply return now
-  if (__data->__sockaddr_size == 0) return;
-
-  // Try to bind, and if successful return immediately
-  int __result = bind(__data->__fd, &__data->__sockaddr, __data->__sockaddr_size);
-  if (__result == 0) return;
-
-  // Binding failed, record the error and close the socket
-  int __socket = __data->__fd;
-  __data->__syscall = "bind";
-  __data->__errno = errno;
-  __data->__fd = -1;
-  close(__socket);
+  // Optionally specify the from address
+  if (__data->__sockaddr_size > 0) {
+    int __result = bind(__data->__fd, &__data->__sockaddr, __data->__sockaddr_size);
+    if (__result != 0) _open_execute_fail(_env, __data, "bind", errno);
+  }
 }
 
 /* ========================================================================== */
@@ -300,18 +355,19 @@ static napi_value _open(
   bzero(&__data, sizeof(struct _open_data));
 
   // Get our `open` call arguments
-  size_t __argc = 3;
-  napi_value __args[3];
+  size_t __argc = 4;
+  napi_value __args[4];
   NAPI_CALL_VALUE(napi_get_cb_info, _env, _info, &__argc, __args, NULL, NULL);
 
-  if (__argc != 3) {
-    _throw_type_error(_env, "Expected three arguments: socket family, bind address, callback");
+  if (__argc != 4) {
+    _throw_type_error(_env, "Expected 4 arguments: socket family, from address, source interface, callback");
     return NULL;
   }
 
   napi_value __socket_family = __args[0];
-  napi_value __bind_address = __args[1];
-  napi_value __callback = __args[2];
+  napi_value __from_address = __args[1];
+  napi_value __source_interface = __args[2];
+  napi_value __callback = __args[3];
 
   // Get the socket's family (should be AF_INET or AF_INET6)
   NAPI_CALL_VALUE(napi_typeof, _env, __socket_family, &__type);
@@ -324,55 +380,88 @@ static napi_value _open(
   // socket protocol (which must be IPPROTO_ICMP or IPPROTO_ICMPV6 accordingly).
   int __sa_family = -1;
   NAPI_CALL_VALUE(napi_get_value_int32, _env, __socket_family, &__sa_family);
-  void * __bind_address_ptr = NULL;
+  void * __from_address_ptr = NULL;
 
   if (__sa_family == AF_INET) {
     __data.__sockaddr.sa_family = AF_INET;
     __data.__sockaddr_size = sizeof(struct sockaddr_in);
-    __bind_address_ptr = &__data.__sockaddr_in4_addr.sin_addr;
+    __from_address_ptr = &__data.__sockaddr_in4_addr.sin_addr;
   } else if (__sa_family == AF_INET6) {
     __data.__sockaddr.sa_family = AF_INET6;
     __data.__sockaddr_size = sizeof(struct sockaddr_in6);
-    __bind_address_ptr = &__data.__sockaddr_in6_addr.sin6_addr;
+    __from_address_ptr = &__data.__sockaddr_in6_addr.sin6_addr;
   } else {
-    _throw_type_error(_env, "Socket domain must be AF_INET or AF_INET6");
+    _throw_type_error(_env, "Socket family must be AF_INET or AF_INET6");
     return NULL;
   }
 
   // Get the address to bind to (if any)
-  NAPI_CALL_VALUE(napi_typeof, _env, __bind_address, &__type);
+  NAPI_CALL_VALUE(napi_typeof, _env, __from_address, &__type);
   if ((__type == napi_null) || (__type == napi_undefined)) {
     __data.__sockaddr_size = 0; // no binding!
   } else if (__type != napi_string) {
-    _throw_type_error(_env, "Bind address must be a string, null or undefined");
+    _throw_type_error(_env, "From address must be a string, null or undefined");
     return NULL;
   } else {
     // Figure out the `in(6)_addr` structure for the address to bind to
-    char __bind_address_chars[40];
-    bzero(__bind_address_chars, 40);
+    char __buffer[42];
+    bzero(__buffer, 42);
+    size_t __size = 42;
 
     // Convert the address string into a C string
-    NAPI_CALL_VALUE(napi_get_value_string_latin1, _env, __bind_address, __bind_address_chars, 40, NULL);
+    NAPI_CALL_VALUE(napi_get_value_string_latin1, _env, __from_address, __buffer, __size, &__size);
+
+    // Check that the address is actually of the correct length
+    if (__size > 40) {
+      _throw_type_error(_env, "From address must be at most 40 characters long");
+    }
 
     // Convert the C string into a network address and check the result
-    int __result = inet_pton(__sa_family, __bind_address_chars, __bind_address_ptr);
+    int __result = inet_pton(__sa_family, __buffer, __from_address_ptr);
     if (__result < 0) {
       _throw_system_error(_env, "inet_pton", errno);
       return NULL;
     } else if (__result == 0) {
       char __message[128];
       const char *__format =
-        __sa_family == AF_INET ? "Invalid IPv4 address: %s" :
-        __sa_family == AF_INET6 ? "Invalid IPv6 address: %s" :
-        "Invalid address: %s";
+        __sa_family == AF_INET ? "Invalid IPv4 from address: %s" :
+        __sa_family == AF_INET6 ? "Invalid IPv6 from address: %s" :
+        "Invalid from address: %s";
 
-      snprintf(__message, sizeof(__message), __format, __bind_address_chars);
+      snprintf(__message, sizeof(__message), __format, __buffer);
       _throw_type_error(_env, __message);
       return NULL;
     }
   }
 
-  // Get the type of our first and only argument, must be a function
+  // Get the interface to bind to (if any)
+  NAPI_CALL_VALUE(napi_typeof, _env, __source_interface, &__type);
+  if ((__type == napi_null) || (__type == napi_undefined)) {
+    __data.__interface_length = 0; // no interface binding!
+  } else if (__type != napi_string) {
+    _throw_type_error(_env, "Source interface must be a string, null or undefined");
+    return NULL;
+  } else {
+    // Figure out the `in(6)_addr` structure for the address to bind to
+    char __buffer[IFNAMSIZ + 2];
+    bzero(__buffer, IFNAMSIZ + 2);
+    size_t __size = IFNAMSIZ + 2;
+
+    // Convert the address string into a C string
+    NAPI_CALL_VALUE(napi_get_value_string_latin1, _env, __source_interface, __buffer, __size, &__size);
+
+    // Check that the address is actually of the correct length
+    if (__size > IFNAMSIZ) {
+      _throw_type_error(_env, __ERR_SOURCE_INTERFACE_NAME_TOO_LONG);
+      return NULL;
+    }
+
+    // Copy the interface name into our data structure
+    memcpy(__data.__interface, __buffer, __size + 1);
+    __data.__interface_length = __size;
+  }
+
+  // Get the type of our last argument, which must be a function
   NAPI_CALL_VALUE(napi_typeof, _env, __callback, &__type);
 
   if (__type != napi_function) {

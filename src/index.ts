@@ -11,20 +11,14 @@ import { getWarning, ProtocolHandler } from './protocol'
 import type { Socket } from 'node:dgram'
 
 
-function ifAddr(name: string, protocol: 'ipv4' | 'ipv6'): string | undefined {
-  const infos = networkInterfaces()[name]
-  if (! infos) return
-
-  const info = infos.filter((i) => i.family.toLowerCase() === protocol)[0]
-  return info?.address
-}
-
 /** Options to create a {@link Pinger} instance */
 export interface PingerOptions {
   /** The protocol: either `ipv4` or `ipv6` */
   protocol?: 'ipv4' | 'ipv6',
-  /** An optional address or _interface name_ used to ping _from_ */
+  /** An optional IP address or used to ping _from_ */
   from?: string,
+  /** An optional source interface name to bind to for pinging */
+  source?: string,
   /** The timeout **in milliseconds** after which a packet is considered _lost_ (default: 30000 - 30 sec) */
   timeout?: number,
   /** The interval **in milliseconds** used to ping the remote host (default: 1000 - 1 sec) */
@@ -41,9 +35,10 @@ export interface PingerOptions {
 export async function createPinger(to: string, options: PingerOptions = {}): Promise<Pinger> {
   const {
     protocol = isIPv6(to) ? 'ipv6' : 'ipv4',
-    from = null,
     timeout = 30000,
     interval = 1000,
+    from,
+    source,
   } = options
 
   // Determine (and check) the address family
@@ -68,26 +63,30 @@ export async function createPinger(to: string, options: PingerOptions = {}): Pro
     throw new Error(`Invalid IPv6 ping target "${target}"`)
   }
 
-  // Determine the optional source address and check it's the right kind
-  const source = from ? (ifAddr(from, protocol) || from) : undefined
-  if (source) {
-    if (isIPv4(source) && (protocol != 'ipv4')) {
-      throw new Error(`Invalid IPv6 ping source "${source}"`)
-    } else if (isIPv6(source) && (protocol != 'ipv6')) {
-      throw new Error(`Invalid IPv4 ping source "${source}"`)
-    } else if (! isIP(source)) {
-      throw new Error(`Invalid source interface name "${source}"`)
+  // Determine the optional from address and check it's the right kind
+  if (from) {
+    if (isIPv4(from) && (protocol != 'ipv4')) {
+      throw new Error(`Invalid IPv6 address to ping from "${from}"`)
+    } else if (isIPv6(from) && (protocol != 'ipv6')) {
+      throw new Error(`Invalid IPv4 address to ping from "${from}"`)
+    } else if (!isIP(from)) {
+      throw new Error(`Invalid IP address to ping from "${from}"`)
     }
+  }
+
+  // Ensure that the source interface is actually valid
+  if ((source) && (! networkInterfaces()[source])) {
+    throw new Error(`Invalid source interface name "${source}"`)
   }
 
   // Return a promise wrapping around our native code's "open" call
   return new Promise((resolve, reject) => {
-    native.open(family, source, (error: Error | null, fd: number | undefined) => {
+    native.open(family, from, source, (error: Error | null, fd: number | undefined) => {
       if (error) {
         Error.captureStackTrace(error)
         return reject(error)
       } else if (fd) {
-        return resolve(new PingerImpl(source, target, timeout, interval, protocol, fd))
+        return resolve(new PingerImpl(from, source, target, timeout, interval, protocol, fd))
       } else /* coverage ignore next */ {
         return reject(new Error(`Unknown error (fd=${fd})`))
       }
@@ -96,13 +95,22 @@ export async function createPinger(to: string, options: PingerOptions = {}): Pro
 }
 
 export interface Pinger {
+  /** An optional IP address or used to ping _from_ */
+  readonly from?: string | undefined
+  /** An optional source interface name to bind to for pinging */
   readonly source?: string | undefined
+  /** The IP address or host name to ping. */
   readonly target: string
+  /** The timeout **in milliseconds** after which a packet is considered _lost_ (default: 30000 - 30 sec) */
   readonly timeout: number
+  /** The interval **in milliseconds** used to ping the remote host (default: 1000 - 1 sec) */
   readonly interval: number
+  /** The protocol: either `ipv4` or `ipv6` */
   readonly protocol: 'ipv4' | 'ipv6'
 
+  /** A flag indicating whether this pinger is _running_ */
   readonly running: boolean
+  /** A flag indicating whether this pinger was _closed_ */
   readonly closed: boolean
 
   start(): void
@@ -144,6 +152,7 @@ class PingerImpl extends EventEmitter implements Pinger {
   private __closed: boolean = false
 
   constructor(
+      public readonly from: string | undefined,
       public readonly source: string | undefined,
       public readonly target: string,
       public readonly timeout: number,
