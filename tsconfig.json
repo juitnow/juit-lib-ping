@@ -1,24 +1,21 @@
 {
   "compilerOptions": {
-    // Setup our compilation type
     "lib": [ "es2022" ],
     "target": "es2022",
-    // "module": "es2022",
-    "module": "commonjs",
+    "module": "es2022",
     "moduleResolution": "node16",
     "types": [ "node" ],
     "esModuleInterop": true,
-    // No emit (done with "bootstrap")
+
     "noEmit": true,
-    // Ultra strict
+
     "strict": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noUncheckedIndexedAccess": true,
-    "importsNotUsedAsValues": "error",
   },
   "include": [
-    "src/**/*.ts",
-  ]
+    "./src",
+    "./build.ts",
+  ],
 }
