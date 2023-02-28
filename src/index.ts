@@ -168,6 +168,7 @@ class PingerImpl extends EventEmitter implements Pinger {
 
     // Create a socket and handle its incoming messages
     this.__socket = createSocket({ type }, (buffer, info) => {
+      // coverage ignore if
       // Check that the address we received the packet from matches our target
       if (info.address !== target) return
 
