@@ -22,6 +22,10 @@ describe('Ping Test', () => {
         expect(pinger.closed).toBeFalse()
         expect(pinger.running).toBeTrue()
 
+        pinger.start()
+        expect(pinger.closed).toBeFalse()
+        expect(pinger.running).toBeTrue()
+
         pinger.stop()
 
         expect(pinger.closed).toBeFalse()
