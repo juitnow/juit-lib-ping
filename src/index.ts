@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import { isIP, isIPv4, isIPv6 } from 'node:net'
 import { networkInterfaces } from 'node:os'
 
-import * as native from '../native/ping.cjs'
+import native from '../native/ping.cjs'
 import { getWarning, ProtocolHandler } from './protocol'
 
 import type { Socket } from 'node:dgram'

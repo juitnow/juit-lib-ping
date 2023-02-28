@@ -1,6 +1,6 @@
 import { promisify } from 'node:util'
 
-import * as native from '../native/ping.cjs'
+import native from '../native/ping.cjs'
 
 const long = 'a_very_very_very_very_very_very_very_very_very_very_long_string'
 
