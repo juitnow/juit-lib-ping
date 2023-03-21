@@ -58,33 +58,33 @@ describe('Constructor', () => {
   })
 
   it('should construct with an IPv4 host name', async () => {
-    const addr = (await resolve4('www.google.com'))[0]
-    expect(addr).toBeTruthy()
-
     pinger = await createPinger('www.google.com', { protocol: 'ipv4' })
     expect(pinger).toEqual(jasmine.objectContaining({
       from: undefined,
       source: undefined,
-      target: addr,
+      target: pinger.target,
       timeout: 30000,
       interval: 1000,
       protocol: 'ipv4',
     }))
+
+    const addrs = await resolve4('www.google.com')
+    expect(addrs).toEqual(jasmine.arrayContaining([ pinger.target ]))
   })
 
   it('should construct with an IPv6 host name', async () => {
-    const addr = (await resolve6('www.google.com'))[0]
-    expect(addr).toBeTruthy()
-
     pinger = await createPinger('www.google.com', { protocol: 'ipv6' })
     expect(pinger).toEqual(jasmine.objectContaining({
       from: undefined,
       source: undefined,
-      target: addr,
+      target: pinger.target,
       timeout: 30000,
       interval: 1000,
       protocol: 'ipv6',
     }))
+
+    const addrs = await resolve6('www.google.com')
+    expect(addrs).toEqual(jasmine.arrayContaining([ pinger.target ]))
   })
 
   it('should construct with an IPv4 from address and target', async () => {

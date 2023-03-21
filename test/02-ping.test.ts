@@ -1,5 +1,7 @@
 import * as fs from 'node:fs'
 
+import { log } from '@plugjs/build'
+
 import { createPinger } from '../src/index'
 
 describe('Ping Test', () => {
@@ -56,7 +58,13 @@ describe('Ping Test', () => {
   }
 
   it('should ping a real host over the network', async () => {
-    const pinger = await createPinger('1.1.1.1', { interval: 100 })
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      log.warn('ICMP will not work in Github Actions (thank you, Azure)')
+      log.warn('Keep your fingers crossed that this still works...')
+      return
+    }
+
+    const pinger = await createPinger('www.google.com', { interval: 100 })
     try {
       pinger.start()
 
