@@ -56,7 +56,7 @@ describe('Ping Test', () => {
   }
 
   it('should ping a real host over the network', async () => {
-    const pinger = await createPinger('1.1.1.1', { interval: 100 })
+    const pinger = await createPinger('github.com', { interval: 100 })
     try {
       pinger.start()
 
