@@ -1,7 +1,7 @@
 {
   "name": "@juit/lib-ping",
-  "version": "1.0.1",
-  "type": "commonjs",
+  "version": "1.1.0",
+  "type": "module",
   "description": "Rootless ICMPv4/ICMPv6 Ping library for NodeJS",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -45,10 +45,10 @@
   "author": "Juit Developers <developers@juit.com>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@plugjs/build": "^0.2.4",
-    "@types/node": "^18.14.2",
+    "@plugjs/build": "^0.3.0",
+    "@types/node": "^18.15.5",
     "node-gyp": "^9.3.1",
-    "typescript": "^4.9.5"
+    "typescript": "^5.0.2"
   },
   "directories": {
     "test": "test"
