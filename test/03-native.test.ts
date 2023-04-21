@@ -80,15 +80,19 @@ describe('Native Adapter', () => {
   it('should not bind to the wrong source interface', async () => {
     const open = promisify(native.open)
 
-    await expectAsync(open(native.AF_INET, null, 'xyznope'))
-        .toBeRejectedWith(jasmine.objectContaining({
-          syscall: jasmine.stringMatching(/^(setsockopt)|(if_nametoindex)$/),
-        }))
+    await expect(open(native.AF_INET, null, 'xyznope'))
+        .toBeRejected((assert) => {
+          assert.toInclude({
+            syscall: expect.toMatch(/^(setsockopt)|(if_nametoindex)$/),
+          })
+        })
 
-    await expectAsync(open(native.AF_INET6, null, 'xyznope'))
-        .toBeRejectedWith(jasmine.objectContaining({
-          syscall: jasmine.stringMatching(/^(setsockopt)|(if_nametoindex)$/),
-        }))
+    await expect(open(native.AF_INET6, null, 'xyznope'))
+        .toBeRejected((assert) => {
+          assert.toInclude({
+            syscall: expect.toMatch(/^(setsockopt)|(if_nametoindex)$/),
+          })
+        })
   })
 
 
@@ -97,14 +101,18 @@ describe('Native Adapter', () => {
 
     const open = promisify(native.open)
 
-    await expectAsync(open(native.AF_INET, '1.1.1.1', null))
-        .toBeRejectedWith(jasmine.objectContaining({
-          syscall: 'bind',
-        }))
+    await expect(open(native.AF_INET, '1.1.1.1', null))
+        .toBeRejected((assert) => {
+          assert.toInclude({
+            syscall: 'bind',
+          })
+        })
 
-    await expectAsync(open(native.AF_INET6, '2606:4700:4700::1111', null))
-        .toBeRejectedWith(jasmine.objectContaining({
-          syscall: 'bind',
-        }))
+    await expect(open(native.AF_INET6, '2606:4700:4700::1111', null))
+        .toBeRejected((assert) => {
+          assert.toInclude({
+            syscall: 'bind',
+          })
+        })
   })
 })
