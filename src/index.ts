@@ -144,7 +144,7 @@ class PingerImpl extends EventEmitter implements Pinger {
   private readonly __handler: ProtocolHandler
   private readonly __socket: Socket
 
-  private __timer?: NodeJS.Timer
+  private __timer?: NodeJS.Timeout
 
   private __sent: number = 0
   private __received: number = 0
