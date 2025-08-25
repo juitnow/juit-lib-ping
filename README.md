@@ -4,9 +4,6 @@ Ping library for NodeJS
 Does it work?
 > it _seems_ to...
 
-Does it require `root`?
-> nope!
-
 This library simply _pings_ a host, and tracks the latency over time.
 
 Simply construct a `Pinger` with a host name / address and `start()` it!
