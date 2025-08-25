@@ -44,10 +44,10 @@
   "author": "Juit Developers <developers@juit.com>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@plugjs/build": "^0.6.0",
+    "@plugjs/build": "^0.6.58",
     "@types/node": "<19",
-    "node-gyp": "^10.1.0",
-    "typescript": "^5.5.2"
+    "node-gyp": "^11.4.1",
+    "typescript": "^5.9.2"
   },
   "directories": {
     "test": "test"
