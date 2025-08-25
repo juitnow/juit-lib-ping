@@ -21,7 +21,7 @@
     }
   },
   "scripts": {
-    "build": "plug",
+    "build": "plug $([ \"${CI}\" = \"true\" ] && echo \"transpile lint\")",
     "coverage": "plug coverage",
     "dev": "plug coverage -w src -w test",
     "lint": "plug lint",
